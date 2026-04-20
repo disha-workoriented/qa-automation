@@ -257,11 +257,109 @@ def test_full_flow() -> None:
             # Wait for new page
             page.wait_for_load_state("networkidle")
             expect(page).to_have_url(re.compile(r"bucket"))
+          
+            # STEP: GO TO BUCKETS
 
-            
-    
+            buckets_link = page.get_by_role("link", name=re.compile(r"buckets", re.I))
+            expect(buckets_link).to_be_visible(timeout=15000)
+            buckets_link.click()
 
-        # ----------------------------
+            # 🔥 WAIT FOR PAGE TO LOAD PROPERLY
+            page.wait_for_load_state("networkidle")
+
+            # ----------------------------
+            # STEP 3: OPEN FORM (Add New Bucket)
+            # ----------------------------
+            page.wait_for_selector("table", state="visible", timeout=60000)
+
+            add_new_btn = page.get_by_role("button", name=re.compile(r"add new", re.I))
+            expect(add_new_btn).to_be_visible(timeout=15000)
+            add_new_btn.click()
+
+            expect(page.get_by_text("Add New Bucket")).to_be_visible()
+
+            # STEP X: DUPLICATE CREATION
+            # ----------------------------
+
+            # Open Add New Bucket again (you said you'll handle navigation)
+
+            expect(page.get_by_role("heading", name="Add New Bucket")).to_be_visible()
+
+            # Fill SAME data again
+            page.locator("#project_id").select_option(label=selected_data["project"])
+            page.locator("#state").select_option(label=selected_data["state"])
+            page.locator("#start_year").select_option(label=selected_data["start_year"])
+            page.locator("#end_year").select_option(label=selected_data["end_year"])
+            page.locator("#case_class").select_option(label=selected_data["case_class"])
+            page.locator("#area_of_law").select_option(label=selected_data["area_of_law"])
+            page.locator("#case_type_group").select_option(label=selected_data["case_type_group"])
+            page.locator("#case_type").select_option(label=selected_data["case_type"])
+            page.locator("#court_source").select_option(label=selected_data["court_source"])
+
+            # Submit again
+            page.get_by_role("button", name=re.compile(r"save|submit", re.I)).click()
+
+
+
+            # ----------------------------
+            # STEP 6: WAIT FOR LIST TO LOAD
+            # ----------------------------
+            page.wait_for_load_state("networkidle", timeout=60000)
+            page.wait_for_selector("text=Add New Bucket", state="hidden", timeout=60000)
+            page.wait_for_selector("div.overflow-x-auto.table-container table", state="visible", timeout=60000)
+            bucket_table = page.locator("div.overflow-x-auto.table-container table").first
+            expect(bucket_table).to_be_visible(timeout=60000)
+
+            bucket_rows = bucket_table.locator("tbody tr")
+            candidate_match = None
+            primary_expected = bucket_identifier
+            fallback_expected_values = [project_name, state_name, start_year, end_year]
+            end_time = time.time() + 60
+
+            while time.time() < end_time:
+                row_count = bucket_rows.count()
+                for index in range(row_count):
+                    row = bucket_rows.nth(index)
+                    row_text = row.inner_text()
+                    if primary_expected in row_text:
+                        candidate_match = row
+                        break
+                    if all(value in row_text for value in fallback_expected_values):
+                        candidate_match = row
+                        break
+                if candidate_match:
+                    break
+                time.sleep(1)
+
+            if not candidate_match:
+                if row_count == 0:
+                    raise AssertionError(
+                        "No bucket rows found after saving and waiting for the table to refresh."
+                    )
+
+                all_rows_text = [bucket_rows.nth(i).inner_text() for i in range(row_count)]
+                raise AssertionError(
+                    "Could not find newly created bucket row in the table within 60 seconds.\n"
+                    f"Primary expected identifier: {primary_expected}\n"
+                    f"Fallback expected values: {fallback_expected_values}\n"
+                    f"Row texts:\n{os.linesep.join(all_rows_text)}"
+                )
+
+            selected_row_text = candidate_match.inner_text()
+            print("Found bucket row text:", selected_row_text)
+
+            assert project_name in selected_row_text, f"Expected project='{project_name}' in selected bucket row"
+            assert start_year in selected_row_text, f"Expected start_year='{start_year}' in selected bucket row"
+            assert end_year in selected_row_text, f"Expected end_year='{end_year}' in selected bucket row"
+
+            history_btn = page.locator("#logs-button")
+
+            expect(history_btn).to_be_visible(timeout=10000)
+
+            with page.expect_navigation():
+                history_btn.click()
+                                        
+
         # STEP 9: SCREENSHOT
         # ----------------------------
         timestamp = int(time.time())
